@@ -1,0 +1,39 @@
+name: darmoz-whatsapp
+
+# Copia versionada. La que usa el server vive en /opt/infra/services/darmoz-whatsapp/
+# junto con su .env (DB, WA_SECRETS_KEY, etc.).
+#
+# Publicada por Traefik en https://<APP_DOMAIN>/darmoz-whatsapp (es el context path
+# de Spring, así que no hace falta stripprefix). Todo el path es público a nivel
+# Traefik: el webhook de Meta lo valida con la firma HMAC, POST /messages con el
+# X-Client-Id y el resto exige JWT de darmoz-auth con rol SUPER.
+services:
+  darmoz-whatsapp:
+    image: ${APP_IMAGE:-ghcr.io/darmozcs/darmoz-whatsapp:latest}
+    container_name: darmoz-whatsapp
+    restart: unless-stopped
+    env_file: .env
+    mem_limit: 512m
+    volumes:
+      # Llave pública de darmoz-auth: no es secreta, se monta de la carpeta de
+      # darmoz-auth para no duplicarla.
+      - ../darmoz-auth/keys/public_key.pem:/app/keys/darmoz_public_key.pem:ro
+    # proxy: Traefik. data: Postgres.
+    networks: [proxy, data]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.darmoz-whatsapp.rule=Host(`${APP_DOMAIN:-darmozsc.duckdns.org}`) && PathPrefix(`${APP_PATH_PREFIX:-/darmoz-whatsapp}`)"
+      - "traefik.http.routers.darmoz-whatsapp.entrypoints=websecure"
+      - "traefik.http.routers.darmoz-whatsapp.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.darmoz-whatsapp.middlewares=secure-headers@file,darmoz-whatsapp-ratelimit"
+      # Webhook expuesto a internet: 20 req/s por IP (ráfagas de 50).
+      - "traefik.http.middlewares.darmoz-whatsapp-ratelimit.ratelimit.average=20"
+      - "traefik.http.middlewares.darmoz-whatsapp-ratelimit.ratelimit.burst=50"
+      - "traefik.http.services.darmoz-whatsapp.loadbalancer.server.port=8080"
+
+networks:
+  proxy:
+    external: true
+  data:
+    external: true
