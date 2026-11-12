@@ -3,12 +3,14 @@ package com.darmoz.whatsapp.meta;
 import com.darmoz.whatsapp.account.MetaAccount;
 import com.darmoz.whatsapp.common.ExternalApiException;
 import com.darmoz.whatsapp.config.WhatsappProperties;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 import java.util.Map;
@@ -16,17 +18,23 @@ import java.util.Map;
 /**
  * Graph API de Meta (WhatsApp Cloud API). Cada llamada usa el token y la
  * version de la cuenta que se le pasa.
+ *
+ * Las respuestas se leen como texto y se parsean aca: algunos endpoints de Meta
+ * (phone_numbers, subscribed_apps) devuelven JSON con Content-Type
+ * text/javascript, que el RestClient no sabe convertir.
  */
 @Component
 public class WhatsAppCloudClient {
 
-    private static final ParameterizedTypeReference<Map<String, Object>> JSON_MAP = new ParameterizedTypeReference<>() {
+    private static final TypeReference<Map<String, Object>> JSON_MAP = new TypeReference<>() {
     };
 
     private final RestClient restClient;
+    private final JsonMapper jsonMapper;
 
-    public WhatsAppCloudClient(RestClient.Builder builder, WhatsappProperties properties) {
+    public WhatsAppCloudClient(RestClient.Builder builder, WhatsappProperties properties, JsonMapper jsonMapper) {
         this.restClient = builder.baseUrl(properties.graphApiBaseUrl()).build();
+        this.jsonMapper = jsonMapper;
     }
 
     /** GET /{waba}: valida el token y devuelve el nombre de la WABA. */
@@ -82,11 +90,11 @@ public class WhatsAppCloudClient {
 
     private Map<String, Object> get(MetaAccount account, String uri, Object... uriVariables) {
         try {
-            return restClient.get()
+            return parse(restClient.get()
                     .uri(uri, uriVariables)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + account.getAccessToken())
                     .retrieve()
-                    .body(JSON_MAP);
+                    .body(String.class));
         } catch (RestClientResponseException e) {
             throw new ExternalApiException("Meta respondio " + e.getStatusCode().value() + ": "
                     + e.getResponseBodyAsString(), e.getStatusCode().value());
@@ -97,17 +105,28 @@ public class WhatsAppCloudClient {
 
     private Map<String, Object> post(MetaAccount account, String uri, Object body, Object... uriVariables) {
         try {
-            return restClient.post()
+            return parse(restClient.post()
                     .uri(uri, uriVariables)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + account.getAccessToken())
                     .body(body)
                     .retrieve()
-                    .body(JSON_MAP);
+                    .body(String.class));
         } catch (RestClientResponseException e) {
             throw new ExternalApiException("Meta respondio " + e.getStatusCode().value() + ": "
                     + e.getResponseBodyAsString(), e.getStatusCode().value());
         } catch (RestClientException e) {
             throw new ExternalApiException("No se pudo llamar a la Graph API de Meta", e);
+        }
+    }
+
+    private Map<String, Object> parse(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            return jsonMapper.readValue(body, JSON_MAP);
+        } catch (JacksonException e) {
+            throw new ExternalApiException("Meta devolvio una respuesta que no es JSON", e);
         }
     }
 }
