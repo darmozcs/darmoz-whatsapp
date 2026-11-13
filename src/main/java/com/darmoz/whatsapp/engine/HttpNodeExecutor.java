@@ -7,6 +7,7 @@ import com.darmoz.whatsapp.flow.NodeType;
 import com.darmoz.whatsapp.integration.AppHttpCaller;
 import com.darmoz.whatsapp.integration.AppIntegration;
 import com.darmoz.whatsapp.integration.AppIntegrationRepository;
+import com.darmoz.whatsapp.phonenumber.PhoneNumber;
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.InvalidJsonException;
 import com.jayway.jsonpath.JsonPath;
@@ -16,7 +17,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -33,6 +36,12 @@ import java.util.UUID;
 public class HttpNodeExecutor {
 
     static final String HEADER_WHATSAPP_FROM = "X-Whatsapp-From";
+    /** Cuenta de Meta (WABA) que recibio el mensaje: la aplicacion la usa para saber de quien es el bot. */
+    static final String HEADER_WHATSAPP_WABA_ID = "X-Whatsapp-Waba-Id";
+    static final String HEADER_WHATSAPP_PHONE_NUMBER_ID = "X-Whatsapp-Phone-Number-Id";
+    /** Los pone siempre el motor: los headers del nodo no los pueden pisar. */
+    private static final Set<String> RESERVED_HEADERS = Set.of(HEADER_WHATSAPP_FROM.toLowerCase(Locale.ROOT),
+            HEADER_WHATSAPP_WABA_ID.toLowerCase(Locale.ROOT), HEADER_WHATSAPP_PHONE_NUMBER_ID.toLowerCase(Locale.ROOT));
     static final String VARIABLE_STATUS = "httpStatus";
 
     private static final Logger log = LoggerFactory.getLogger(HttpNodeExecutor.class);
@@ -45,8 +54,8 @@ public class HttpNodeExecutor {
         this.httpCaller = httpCaller;
     }
 
-    public String execute(Map<String, Object> data, UUID applicationId, VariableScope scope,
-                          Map<String, Object> variables) {
+    public String execute(Map<String, Object> data, UUID applicationId, PhoneNumber phoneNumber,
+                          VariableScope scope, Map<String, Object> variables) {
         AppIntegration integration = integrationRepository.findByApplicationId(applicationId).orElse(null);
         if (integration == null) {
             log.warn("El bot de la aplicacion {} usa un nodo http pero la aplicacion no tiene integracion", applicationId);
@@ -58,9 +67,14 @@ public class HttpNodeExecutor {
         String path = TemplateRenderer.render(NodeData.string(data, "path"), scope, TemplateRenderer.Escape.URL);
         String body = TemplateRenderer.render(NodeData.string(data, "body"), scope, TemplateRenderer.Escape.JSON);
         Map<String, String> headers = new LinkedHashMap<>();
-        NodeData.stringMap(data, "headers").forEach((name, value) ->
-                headers.put(name, TemplateRenderer.render(value, scope)));
+        NodeData.stringMap(data, "headers").forEach((name, value) -> {
+            if (!RESERVED_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
+                headers.put(name, TemplateRenderer.render(value, scope));
+            }
+        });
         headers.put(HEADER_WHATSAPP_FROM, scope.contactWaId());
+        headers.put(HEADER_WHATSAPP_WABA_ID, phoneNumber.getAccount().getWabaId());
+        headers.put(HEADER_WHATSAPP_PHONE_NUMBER_ID, phoneNumber.getPhoneNumberId());
 
         AppHttpCaller.HttpCallResult result;
         try {

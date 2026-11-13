@@ -158,7 +158,8 @@ public class ConversationEngine {
                     return;
                 }
                 case CONDITION -> handle = ConditionEvaluator.evaluate(data, scope);
-                case HTTP -> handle = httpNodeExecutor.execute(data, run.bot.getApplicationId(), scope, run.variables);
+                case HTTP -> handle = httpNodeExecutor.execute(data, run.bot.getApplicationId(), run.phoneNumber,
+                        scope, run.variables);
                 case SET_VARIABLE -> {
                     run.variables.put(NodeData.string(data, "variable"),
                             TemplateRenderer.render(NodeData.string(data, "value"), scope));

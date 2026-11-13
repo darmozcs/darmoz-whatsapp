@@ -103,8 +103,8 @@ class ConversationEngineTest {
     @SuppressWarnings("unchecked")
     void buttonReplyCallsTheApiAndAnswersWithTheTotal() {
         engine.handle(bot, phoneNumber, conversation, text("hola"));
-        when(httpNodeExecutor.execute(any(), eq(bot.getApplicationId()), any(), any())).thenAnswer(invocation -> {
-            Map<String, Object> variables = invocation.getArgument(3);
+        when(httpNodeExecutor.execute(any(), eq(bot.getApplicationId()), any(), any(), any())).thenAnswer(invocation -> {
+            Map<String, Object> variables = invocation.getArgument(4);
             variables.put("api", Map.of("total", 1500));
             return NodeType.HANDLE_SUCCESS;
         });
@@ -120,7 +120,7 @@ class ConversationEngineTest {
     @Test
     void apiErrorGoesToTheErrorBranch() {
         engine.handle(bot, phoneNumber, conversation, text("hola"));
-        when(httpNodeExecutor.execute(any(), any(), any(), any())).thenReturn(NodeType.HANDLE_ERROR);
+        when(httpNodeExecutor.execute(any(), any(), any(), any(), any())).thenReturn(NodeType.HANDLE_ERROR);
 
         engine.handle(bot, phoneNumber, conversation, text("1"));
 
@@ -135,7 +135,7 @@ class ConversationEngineTest {
 
         assertThat(sentPayloads(2).get(1).get("type")).isEqualTo("interactive");
         assertThat(conversation.getCurrentNodeId()).isEqualTo("menu");
-        verify(httpNodeExecutor, never()).execute(any(), any(), any(), any());
+        verify(httpNodeExecutor, never()).execute(any(), any(), any(), any(), any());
     }
 
     @Test
